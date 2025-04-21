@@ -1,6 +1,6 @@
-# WePlot
+# WePilot
 
-The WePlot is a web automation agent that executes user instructions by interacting with websites. It uses Selenium for browser automation, BeautifulSoup for HTML parsing, and Hugging Face's InferenceClient to generate actionable commands based on user input.
+The WePilot is a web automation agent that executes user instructions by interacting with websites. It uses Selenium for browser automation, BeautifulSoup for HTML parsing, and Hugging Face's InferenceClient to generate actionable commands based on user input.
 
 ## Features
 
