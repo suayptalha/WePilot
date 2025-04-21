@@ -30,13 +30,24 @@ The WePlot is a web automation agent that executes user instructions by interact
 - `huggingface_hub>=0.10.0`
 - `pyautogui>=0.9.50`
 
-## Setup
+## Installation Instructions
+To set up the WePilot project, follow these steps:
 
-1. Install the required packages:
-   ```sh
+1. Clone the repository:
+   ```
+   git clone https://github.com/suayptalha/WePilot.git
+   ```
+
+2. Navigate to the project directory:
+   ```
+   cd WePilot
+   ```
+
+3. Install the required dependencies:
+   ```
    pip install -r requirements.txt
    ```
-2. Ensure that Google Chrome is installed and that the appropriate [ChromeDriver](https://sites.google.com/chromium.org/driver/) is available in your system PATH.
+4. Ensure that Google Chrome is installed and that the appropriate [ChromeDriver](https://sites.google.com/chromium.org/driver/) is available in your system PATH.
 
 ## Usage
 
