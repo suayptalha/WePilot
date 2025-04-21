@@ -1,0 +1,4 @@
+beautifulsoup4>=4.9.3
+selenium>=4.0.0
+huggingface_hub>=0.10.0
+pyautogui>=0.9.50
