@@ -205,12 +205,21 @@ Your primary task is to generate actions to complete web tasks. Instead of using
 
 IMPORTANT: Always provide your responses in valid JSON format. Do not include any explanations, markdown formatting, or narrative text outside the JSON.
 
+CRITICAL: Be aware of the current state of the browser. If you are already on a website, do not navigate to it again. Continue from the current page state.
+
 Available actions:
-- "navigate": Go to a specific URL
+- "navigate": Go to a specific URL (only use if not already on the site)
 - "find_and_click": Find an element based on provided properties and click it
 - "type": Type text into the previously found element
 - "press_enter": Press Enter key on the previously found element
-- "scroll": Scroll the page
+- "scroll": Scroll the page (specify direction: "up", "down", "to_top", "to_bottom" and amount in pixels)
+- "scroll_to_element": Scroll until a specific element is visible
+- "new_tab": Open a new browser tab
+- "close_tab": Close the current tab
+- "switch_tab": Switch to a different tab by index or URL
+- "refresh_page": Refresh the current page
+- "go_back": Navigate back in browser history
+- "go_forward": Navigate forward in browser history
 - "wait": Wait for a specific time
 - "complete": Signal task completion
 
@@ -227,16 +236,25 @@ Example for finding a search box:
 "element_properties": {"tag": "input", "aria-label": "Search", "placeholder": "Search"}
 """ + few_shot_examples
     }
+
+    try:
+        current_url = driver.current_url
+        page_title = driver.title
+        current_tab_index = get_current_tab_index()
+        tab_count = len(driver.window_handles)
+        browser_state = f"Current browser state: URL={current_url}, Title={page_title}, Tab {current_tab_index+1} of {tab_count}"
+    except:
+        browser_state = "Browser state unknown"
     
     if html:
         user_message = {
             "role": "user", 
-            "content": f"Command: {command}\nHTML Elements:\n{html}"
+            "content": f"Command: {command}\nHTML Elements:\n{html}\n{browser_state}"
         }
     else:
         user_message = {
             "role": "user", 
-            "content": command
+            "content": f"Command: {command}\n{browser_state}"
         }
     
     messages = [system_message] + conversation_history + [user_message]
@@ -557,9 +575,99 @@ def execute_action(action):
                 print("Element for pressing Enter not found")
                 
         elif action_type == "scroll":
+            direction = action.get("direction", "down")
             amount = action.get("amount", 500)
-            driver.execute_script(f"window.scrollBy(0, {amount});")
-            print(f"Scrolled: {amount}px")
+            
+            if direction == "down":
+                driver.execute_script(f"window.scrollBy(0, {amount});")
+                print(f"Scrolled down: {amount}px")
+            elif direction == "up":
+                driver.execute_script(f"window.scrollBy(0, -{amount});")
+                print(f"Scrolled up: {amount}px")
+            elif direction == "to_top":
+                driver.execute_script("window.scrollTo(0, 0);")
+                print("Scrolled to top of page")
+            elif direction == "to_bottom":
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                print("Scrolled to bottom of page")
+            else:
+                driver.execute_script(f"window.scrollBy(0, {amount});")
+                print(f"Scrolled: {amount}px")
+                
+        elif action_type == "scroll_to_element":
+            element_properties = action.get("element_properties", {})
+            element = find_element_by_properties(element_properties)
+            
+            if element:
+                alignment = action.get("alignment", "center")
+                driver.execute_script(f"arguments[0].scrollIntoView({{block: '{alignment}'}});", element)
+                print(f"Scrolled to element: {element_properties}")
+                last_found_element = element
+            else:
+                print("Element to scroll to not found")
+                
+        elif action_type == "new_tab":
+            url = action.get("url", "about:blank")
+            driver.execute_script(f"window.open('{url}');")
+            driver.switch_to.window(driver.window_handles[-1])
+            print(f"Opened new tab with URL: {url}")
+            if url != "about:blank":
+                WebDriverWait(driver, 5).until(
+                    lambda d: d.execute_script('return document.readyState') == 'complete'
+                )
+                try:
+                    handle_common_popups()
+                except:
+                    pass
+                    
+        elif action_type == "close_tab":
+            if len(driver.window_handles) > 1:
+                current_tab = driver.current_window_handle
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])
+                print("Closed current tab and switched to first tab")
+            else:
+                print("Cannot close tab - only one tab remains open")
+                
+        elif action_type == "switch_tab":
+            tab_index = action.get("index", 0)
+            tab_url = action.get("url", "")
+            
+            if tab_url:
+                for handle in driver.window_handles:
+                    driver.switch_to.window(handle)
+                    if tab_url in driver.current_url:
+                        print(f"Switched to tab with URL containing: {tab_url}")
+                        break
+                else:
+                    print(f"No tab found with URL containing: {tab_url}")
+            else:
+                if 0 <= tab_index < len(driver.window_handles):
+                    driver.switch_to.window(driver.window_handles[tab_index])
+                    print(f"Switched to tab at index {tab_index}")
+                else:
+                    print(f"Tab index {tab_index} out of range")
+        
+        elif action_type == "refresh_page":
+            driver.refresh()
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script('return document.readyState') == 'complete'
+            )
+            print("Page refreshed")
+            
+        elif action_type == "go_back":
+            driver.back()
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script('return document.readyState') == 'complete'
+            )
+            print("Navigated back")
+            
+        elif action_type == "go_forward":
+            driver.forward()
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script('return document.readyState') == 'complete'
+            )
+            print("Navigated forward")
             
         elif action_type == "wait":
             seconds = action.get("seconds", 0.5)
@@ -614,96 +722,160 @@ def handle_common_popups():
         except:
             continue
 
+def get_browser_state():
+    try:
+        return {
+            "url": driver.current_url,
+            "title": driver.title,
+            "domain": driver.current_url.split("//")[-1].split("/")[0],
+            "tab_index": get_current_tab_index(),
+            "tab_count": len(driver.window_handles)
+        }
+    except:
+        return {"url": "", "title": "", "domain": "", "tab_index": 0, "tab_count": 1}
+
+def get_current_tab_index():
+    try:
+        current_window = driver.current_window_handle
+        return driver.window_handles.index(current_window)
+    except:
+        return 0
+
 def main():
     global conversation_history
     print("Web Automation Agent started.")
     
+    current_browser_state = get_browser_state()
+    
     user_instruction = input("Enter your instruction: ")
     
-    print("Processing instruction...")
-    print(f"Task: {user_instruction}")
-    
-    llm_response = send_command_to_llm(user_instruction)
-    try:
-        print(f"Planning actions: {str(llm_response)[:100]}...")
+    while user_instruction.lower() not in ["exit", "quit", "stop"]:
+        print("Processing instruction...")
+        print(f"Task: {user_instruction}")
         
-        if isinstance(llm_response, list):
-            actions = llm_response
-        elif isinstance(llm_response, dict) and "actions" in llm_response:
-            actions = llm_response["actions"]
-        elif isinstance(llm_response, dict):
-            actions = [llm_response]
-        else:
-            raise ValueError(f"Unexpected response format: {type(llm_response)}")
-            
-    except (json.JSONDecodeError, ValueError) as e:
-        print(f"Error processing LLM response: {str(e)}")
-        print("Please try again with a different instruction.")
-        return
-    
-    if not actions:
-        print("No actions to execute. Please try a different instruction.")
-        return
+        current_browser_state = get_browser_state()
+        print(f"Current browser state: {current_browser_state['url']}")
         
-    print(f"{len(actions)} initial actions identified.")
-    
-    for action in actions:
-        if execute_action(action):
-            break
-    
-    max_iterations = 10
-    iteration = 0
-    
-    while iteration < max_iterations:
-        iteration += 1
+        if not any(msg.get("content") == user_instruction for msg in conversation_history if msg.get("role") == "user"):
+            augmented_instruction = f"{user_instruction} (Current page: {current_browser_state['title']} - {current_browser_state['url']})"
+            conversation_history.append({"role": "user", "content": augmented_instruction})
         
+        llm_response = send_command_to_llm(user_instruction)
         try:
-            html_content = preprocess_html(driver.page_source)
-            print(f"\nIteration {iteration}: Analyzing page and determining next steps...")
+            print(f"Planning actions: {str(llm_response)[:100]}...")
             
-            llm_response = send_command_to_llm(
-                f"Continue executing the instruction: '{user_instruction}'. What's the next step?", 
-                html_content
-            )
+            if isinstance(llm_response, list):
+                actions = llm_response
+            elif isinstance(llm_response, dict) and "actions" in llm_response:
+                actions = llm_response["actions"]
+            elif isinstance(llm_response, dict):
+                actions = [llm_response]
+            else:
+                raise ValueError(f"Unexpected response format: {type(llm_response)}")
             
-            print(f"Next actions planned: {str(llm_response)[:100]}...")
+            if actions and actions[0].get("action") == "navigate":
+                target_url = actions[0].get("url", "")
+                current_domain = current_browser_state.get("domain", "")
+                target_domain = target_url.split("//")[-1].split("/")[0] if "//" in target_url else ""
+                
+                if current_domain and target_domain and current_domain == target_domain:
+                    print(f"Already on {current_domain}. Skipping navigation.")
+                    actions = actions[1:]
+                
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"Error processing LLM response: {str(e)}")
+            print("Please try again with a different instruction.")
+            user_instruction = input("Enter your next instruction (or type 'exit' to quit): ")
+            continue
+        
+        if not actions:
+            print("No actions to execute. Please try a different instruction.")
+            user_instruction = input("Enter your next instruction (or type 'exit' to quit): ")
+            continue
+            
+        print(f"{len(actions)} initial actions identified.")
+        
+        for action in actions:
+            if execute_action(action):
+                break
+        
+        max_iterations = 10
+        iteration = 0
+        
+        while iteration < max_iterations:
+            iteration += 1
             
             try:
-                if isinstance(llm_response, list):
-                    next_actions = llm_response
-                elif isinstance(llm_response, dict) and "actions" in llm_response:
-                    next_actions = llm_response["actions"]
-                elif isinstance(llm_response, dict):
-                    next_actions = [llm_response]
-                else:
-                    raise ValueError(f"Unexpected response format: {type(llm_response)}")
+                html_content = preprocess_html(driver.page_source)
+                print(f"\nIteration {iteration}: Analyzing page and determining next steps...")
                 
-                if not next_actions:
-                    print("Task completed successfully!")
-                    break
+                current_browser_state = get_browser_state()
+                continuation_prompt = f"Continue executing the instruction: '{user_instruction}'. Current page: {current_browser_state['title']} - {current_browser_state['url']}. What's the next step?"
+                llm_response = send_command_to_llm(continuation_prompt, html_content)
                 
-                print(f"Executing {len(next_actions)} actions for iteration {iteration}...")
+                print(f"Next actions planned: {str(llm_response)[:100]}...")
                 
-                task_complete = False
-                for action in next_actions:
-                    if execute_action(action):
-                        task_complete = True
+                try:
+                    if isinstance(llm_response, list):
+                        next_actions = llm_response
+                    elif isinstance(llm_response, dict) and "actions" in llm_response:
+                        next_actions = llm_response["actions"]
+                    elif isinstance(llm_response, dict):
+                        next_actions = [llm_response]
+                    else:
+                        raise ValueError(f"Unexpected response format: {type(llm_response)}")
+                    
+                    if next_actions and next_actions[0].get("action") == "navigate":
+                        target_url = next_actions[0].get("url", "")
+                        current_domain = current_browser_state.get("domain", "")
+                        target_domain = target_url.split("//")[-1].split("/")[0] if "//" in target_url else ""
+                        
+                        if current_domain and target_domain and current_domain == target_domain:
+                            print(f"Already on {current_domain}. Skipping navigation.")
+                            next_actions = next_actions[1:]
+                    
+                    if not next_actions:
+                        print("Task completed successfully!")
                         break
-                
-                if task_complete:
-                    print("Task completed successfully!")
+                    
+                    print(f"Executing {len(next_actions)} actions for iteration {iteration}...")
+                    
+                    task_complete = False
+                    for action in next_actions:
+                        if execute_action(action):
+                            task_complete = True
+                            break
+                    
+                    if task_complete:
+                        print("Task completed successfully!")
+                        break
+                        
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"Error processing LLM response: {str(e)}")
                     break
                     
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"Error processing LLM response: {str(e)}")
+            except Exception as e:
+                print(f"Error occurred during execution: {str(e)}")
                 break
-                
-        except Exception as e:
-            print(f"Error occurred during execution: {str(e)}")
-            break
-    
-    if iteration >= max_iterations:
-        print("Maximum number of iterations reached. Task may be incomplete.")
+        
+        if iteration >= max_iterations:
+            print("Maximum number of iterations reached. Task may be incomplete.")
+        
+        current_browser_state = get_browser_state()
+        
+        completion_summary = f"Completed task: {user_instruction}. Current page: {current_browser_state['title']} - {current_browser_state['url']}"
+        conversation_history.append({"role": "assistant", "content": completion_summary})
+        
+        if len(conversation_history) > 4:
+            print("\nMemory summary (last 3 tasks):")
+            for i in range(len(conversation_history)-6, len(conversation_history), 2):
+                if i >= 0:
+                    print(f"- {conversation_history[i].get('content', '')[:50]}...")
+        
+        if len(conversation_history) > 20:
+            conversation_history = conversation_history[:2] + conversation_history[-18:]
+        
+        user_instruction = input(f"Task finished. Browser is at: {current_browser_state['url']}\nEnter your next instruction (or type 'exit' to quit): ")
     
     print("Execution finished. Browser will remain open until you close it.")
     print("Press Ctrl+C in the terminal when you want to exit the program.")
