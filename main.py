@@ -48,10 +48,10 @@ def preprocess_html(html, max_chars=5000):
     search_patterns = [
         {'type': 'search'},
         {'name': 'q'},
-        {'placeholder': lambda x: x and 'search' in x.lower()},
-        {'aria-label': lambda x: x and 'search' in x.lower()},
-        {'class': lambda x: x and ('search' in x.lower() or 'query' in x.lower())},
-        {'id': lambda x: x and ('search' in x.lower() or 'query' in x.lower())}
+        {'placeholder': lambda x: x and isinstance(x, str) and 'search' in x.lower()},
+        {'aria-label': lambda x: x and isinstance(x, str) and 'search' in x.lower()},
+        {'class': lambda x: x and (isinstance(x, str) and ('search' in x.lower() or 'query' in x.lower()))},
+        {'id': lambda x: x and isinstance(x, str) and ('search' in x.lower() or 'query' in x.lower())}
     ]
     
     for pattern in search_patterns:
@@ -77,7 +77,7 @@ def preprocess_html(html, max_chars=5000):
         attributes = {
             'tag': element.name,
             'id': element.get('id'),
-            'class': ' '.join(element.get('class', [])),
+            'class': ' '.join(element.get('class', [])) if isinstance(element.get('class'), list) else element.get('class'),
             'name': element.get('name'),
             'type': element.get('type'),
             'placeholder': element.get('placeholder'),
@@ -103,7 +103,7 @@ def preprocess_html(html, max_chars=5000):
         attributes = {
             'tag': element.name,
             'id': element.get('id'),
-            'class': ' '.join(element.get('class', [])),
+            'class': ' '.join(element.get('class', [])) if isinstance(element.get('class'), list) else element.get('class'),
             'name': element.get('name'),
             'type': element.get('type'),
             'placeholder': element.get('placeholder'),
@@ -150,7 +150,11 @@ def get_element_location(element):
             if parent.get('id'):
                 parent_tags[-1] += f"#{parent.get('id')}"
             elif parent.get('class'):
-                parent_tags[-1] += f".{'.'.join(parent.get('class', []))}"
+                classes = parent.get('class')
+                if isinstance(classes, list):
+                    parent_tags[-1] += f".{'.'.join(classes)}"
+                else:
+                    parent_tags[-1] += f".{classes}"
             parent = parent.parent
         else:
             break
@@ -313,10 +317,10 @@ def extract_json_from_text(text):
 def find_element_by_properties(element_properties, timeout=0.5):
     is_search_element = element_properties.get('is_search', False) or (
         ('type' in element_properties and element_properties['type'] == 'search') or
-        ('placeholder' in element_properties and 'search' in element_properties['placeholder'].lower()) or
-        ('aria-label' in element_properties and 'search' in element_properties['aria-label'].lower()) or
-        ('class' in element_properties and ('search' in element_properties['class'].lower() or 'query' in element_properties['class'].lower())) or
-        ('id' in element_properties and ('search' in element_properties['id'].lower() or 'query' in element_properties['id'].lower()))
+        ('placeholder' in element_properties and isinstance(element_properties['placeholder'], str) and 'search' in element_properties['placeholder'].lower()) or
+        ('aria-label' in element_properties and isinstance(element_properties['aria-label'], str) and 'search' in element_properties['aria-label'].lower()) or
+        ('class' in element_properties and isinstance(element_properties['class'], str) and ('search' in element_properties['class'].lower() or 'query' in element_properties['class'].lower())) or
+        ('id' in element_properties and isinstance(element_properties['id'], str) and ('search' in element_properties['id'].lower() or 'query' in element_properties['id'].lower()))
     )
 
     if is_search_element:
@@ -351,8 +355,12 @@ def find_element_by_properties(element_properties, timeout=0.5):
         elif attr == 'text':
             xpath_conditions.append(f"contains(text(), '{value}')")
         elif attr == 'class':
-            for cls in value.split():
-                xpath_conditions.append(f"contains(@class, '{cls}')")
+            if isinstance(value, list):
+                for cls in value:
+                    xpath_conditions.append(f"contains(@class, '{cls}')")
+            else:
+                for cls in value.split():
+                    xpath_conditions.append(f"contains(@class, '{cls}')")
         else:
             xpath_conditions.append(f"@{attr}='{value}'")
     if xpath_conditions:
